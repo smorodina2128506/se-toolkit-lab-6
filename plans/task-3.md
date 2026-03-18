@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 # Task 3: The System Agent — Implementation Plan
 
 ## 1. Цель
@@ -27,3 +28,7 @@
 - Неправильный ключ LMS_API_KEY
 - Неверный базовый URL
 - LLM путает, когда какой инструмент использовать
+=======
+# DO THINGS D{ASD{AS
+
+>>>>>>> Stashed changes
