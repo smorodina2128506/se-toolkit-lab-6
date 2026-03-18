@@ -32,7 +32,32 @@ def read_file(path):
         return f"Ошибка: файл {path} не найден"
 
 # ========== СХЕМЫ ИНСТРУМЕНТОВ ДЛЯ QWEN ==========
-tools = [
+tools = [{
+    "type": "function",
+    "function": {
+        "name": "query_api",
+        "description": "Отправить запрос к бэкенду. Используй для вопросов о данных (сколько предметов, статус коды, информация о пользователях).",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "method": {
+                    "type": "string",
+                    "enum": ["GET", "POST", "PUT", "DELETE"],
+                    "description": "HTTP метод"
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Путь к эндпоинту (например, '/items/')"
+                },
+                "body": {
+                    "type": "string",
+                    "description": "Тело запроса в JSON (только для POST/PUT)"
+                }
+            },
+            "required": ["method", "path"]
+        }
+    }
+}
     {
         "type": "function",
         "function": {
@@ -68,7 +93,38 @@ tools = [
         }
     }
 ]
-
+def query_api(method, path, body=None):
+    """Отправить запрос к бэкенду"""
+    import requests
+    
+    # Загружаем переменные окружения
+    load_dotenv(".env.docker.secret")
+    api_key = os.getenv("LMS_API_KEY")
+    base_url = os.getenv("AGENT_API_BASE_URL", "http://localhost:42002")
+    
+    if not api_key:
+        return "Ошибка: LMS_API_KEY не найден"
+    
+    url = f"{base_url}{path}"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    try:
+        if method.upper() == "GET":
+            response = requests.get(url, headers=headers)
+        elif method.upper() == "POST":
+            response = requests.post(url, headers=headers, json=json.loads(body) if body else {})
+        else:
+            return f"Метод {method} не поддерживается"
+        
+        return json.dumps({
+            "status_code": response.status_code,
+            "body": response.text
+        })
+    except Exception as e:
+        return f"Ошибка запроса: {str(e)}"
 # ========== ОСНОВНАЯ ФУНКЦИЯ ==========
 def main():
     if len(sys.argv) < 2:
@@ -90,17 +146,18 @@ def main():
     client = OpenAI(api_key=api_key, base_url=api_base)
 
     # История сообщений
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "Ты — документационный агент. Используй list_files, чтобы узнать, "
-                "какие файлы есть в папке wiki/, а read_file — чтобы читать их. "
-                "После того как нашёл ответ, укажи source в формате wiki/файл.md#секция."
-            )
-        },
-        {"role": "user", "content": question}
-    ]
+    # История сообщений
+messages = [
+    {
+        "role": "system",
+        "content": (
+            "Ты — документационный агент. Используй list_files, чтобы узнать, "
+            "какие файлы есть в папке wiki/, а read_file — чтобы читать их. "
+            "После того как нашёл ответ, укажи source в формате wiki/файл.md#секция."
+        )
+    },
+    {"role": "user", "content": question}
+]
 
     tool_calls_log = []
     MAX_ITER = 10
@@ -136,6 +193,12 @@ def main():
                 result = list_files(args["path"])
             elif func_name == "read_file":
                 result = read_file(args["path"])
+elif func_name == "query_api":
+    result = query_api(
+        method=args.get("method"),
+        path=args.get("path"),
+        body=args.get("body")
+    )
             else:
                 result = "Неизвестный инструмент"
 

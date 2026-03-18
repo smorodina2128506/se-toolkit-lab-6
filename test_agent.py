@@ -39,3 +39,16 @@ if __name__ == "__main__":
     test_list_wiki()
     test_merge_conflict()
     print("\n🎉 Все тесты прошли успешно!")
+def test_framework_question():
+    """Тест на вопрос про фреймворк (должен читать файлы)"""
+    data = run_agent("What Python web framework does this project use?")
+    tools = [t["tool"] for t in data["tool_calls"]]
+    assert "read_file" in tools, "Должен быть вызван read_file"
+    print("✅ test_framework_question пройден")
+
+def test_items_count():
+    """Тест на вопрос про количество предметов (должен вызывать API)"""
+    data = run_agent("How many items are in the database?")
+    tools = [t["tool"] for t in data["tool_calls"]]
+    assert "query_api" in tools, "Должен быть вызван query_api"
+    print("✅ test_items_count пройден")
