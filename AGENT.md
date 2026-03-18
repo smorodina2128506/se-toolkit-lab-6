@@ -12,3 +12,13 @@
 1. Скопировать файл с переменными:
    ```bash
    cp .env.agent.example .env.agent.secret
+## Task 2: Инструменты документационного агента
+
+- **list_files** — показывает список файлов в папке wiki/
+- **read_file** — читает содержимое файла
+
+Агент сам решает, когда вызывать инструменты. Цикл до 10 шагов.
+
+### Примеры запросов
+- "How do you resolve a merge conflict?" — прочитает git-workflow.md
+- "What files are in the wiki?" — покажет список файлов
