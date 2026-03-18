@@ -2,6 +2,7 @@
 import os
 import sys
 import json
+import requests
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -31,73 +32,8 @@ def read_file(path):
     except FileNotFoundError:
         return f"Ошибка: файл {path} не найден"
 
-# ========== СХЕМЫ ИНСТРУМЕНТОВ ДЛЯ QWEN ==========
-tools = [{
-    "type": "function",
-    "function": {
-        "name": "query_api",
-        "description": "Отправить запрос к бэкенду. Используй для вопросов о данных (сколько предметов, статус коды, информация о пользователях).",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "method": {
-                    "type": "string",
-                    "enum": ["GET", "POST", "PUT", "DELETE"],
-                    "description": "HTTP метод"
-                },
-                "path": {
-                    "type": "string",
-                    "description": "Путь к эндпоинту (например, '/items/')"
-                },
-                "body": {
-                    "type": "string",
-                    "description": "Тело запроса в JSON (только для POST/PUT)"
-                }
-            },
-            "required": ["method", "path"]
-        }
-    }
-}
-    {
-        "type": "function",
-        "function": {
-            "name": "list_files",
-            "description": "Показать список файлов в папке wiki. Используй это, чтобы узнать, какие файлы есть в документации.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Путь к папке (например, 'wiki')"
-                    }
-                },
-                "required": ["path"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "read_file",
-            "description": "Прочитать содержимое файла из wiki. Используй после того, как узнал имя файла через list_files.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Путь к файлу (например, 'wiki/git-workflow.md')"
-                    }
-                },
-                "required": ["path"]
-            }
-        }
-    }
-]
 def query_api(method, path, body=None):
     """Отправить запрос к бэкенду"""
-    import requests
-    
-    # Загружаем переменные окружения
     load_dotenv(".env.docker.secret")
     api_key = os.getenv("LMS_API_KEY")
     base_url = os.getenv("AGENT_API_BASE_URL", "http://localhost:42002")
@@ -115,7 +51,8 @@ def query_api(method, path, body=None):
         if method.upper() == "GET":
             response = requests.get(url, headers=headers)
         elif method.upper() == "POST":
-            response = requests.post(url, headers=headers, json=json.loads(body) if body else {})
+            data = json.loads(body) if body else {}
+            response = requests.post(url, headers=headers, json=data)
         else:
             return f"Метод {method} не поддерживается"
         
@@ -125,6 +62,71 @@ def query_api(method, path, body=None):
         })
     except Exception as e:
         return f"Ошибка запроса: {str(e)}"
+
+# ========== СХЕМЫ ИНСТРУМЕНТОВ ==========
+tools = [
+    {
+        "type": "function",
+        "function": {
+            "name": "list_files",
+            "description": "Показать список файлов в папке wiki. Используй чтобы узнать, какие файлы есть в документации.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Путь к папке (например, 'wiki')"
+                    }
+                },
+                "required": ["path"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_file",
+            "description": "Прочитать содержимое файла из wiki. Используй после list_files.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Путь к файлу (например, 'wiki/git-workflow.md')"
+                    }
+                },
+                "required": ["path"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "query_api",
+            "description": "Отправить запрос к бэкенду. Используй для вопросов о данных (сколько предметов, статус коды, информация о пользователях).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "method": {
+                        "type": "string",
+                        "enum": ["GET", "POST"],
+                        "description": "HTTP метод"
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Путь к эндпоинту (например, '/items/')"
+                    },
+                    "body": {
+                        "type": "string",
+                        "description": "Тело запроса в JSON (только для POST)"
+                    }
+                },
+                "required": ["method", "path"]
+            }
+        }
+    }
+]
+
 # ========== ОСНОВНАЯ ФУНКЦИЯ ==========
 def main():
     if len(sys.argv) < 2:
@@ -133,31 +135,34 @@ def main():
 
     question = sys.argv[1]
 
-    # Загружаем настройки
+    # Загружаем настройки LLM
     load_dotenv(".env.agent.secret")
     api_key = os.getenv("LLM_API_KEY")
     api_base = os.getenv("LLM_API_BASE")
     model = os.getenv("LLM_MODEL")
 
     if not all([api_key, api_base, model]):
-        print("❌ Нет конфига", file=sys.stderr)
+        print("❌ Нет конфига LLM", file=sys.stderr)
         sys.exit(1)
 
     client = OpenAI(api_key=api_key, base_url=api_base)
 
-    # История сообщений
-    # История сообщений
-messages = [
-    {
-        "role": "system",
-        "content": (
-            "Ты — документационный агент. Используй list_files, чтобы узнать, "
-            "какие файлы есть в папке wiki/, а read_file — чтобы читать их. "
-            "После того как нашёл ответ, укажи source в формате wiki/файл.md#секция."
-        )
-    },
-    {"role": "user", "content": question}
-]
+    # Системный промпт
+    system_prompt = (
+        "Ты — системный агент. У тебя есть три типа инструментов:\n"
+        "1. list_files, read_file — для поиска информации в wiki/ (вопросы по документации)\n"
+        "2. query_api — для получения данных из бэкенда (сколько предметов, статус, информация)\n\n"
+        "Правила выбора инструмента:\n"
+        "- Если вопрос про документацию (как что-то сделать) — используй wiki\n"
+        "- Если вопрос про данные (сколько, какой статус) — используй query_api\n"
+        "- Если вопрос про код (как реализована функция) — используй read_file для .py файлов\n\n"
+        "После получения ответа, укажи source для wiki-вопросов."
+    )
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": question}
+    ]
 
     tool_calls_log = []
     MAX_ITER = 10
@@ -175,8 +180,8 @@ messages = [
         # Если нет вызова инструментов — это ответ
         if not msg.tool_calls:
             answer = msg.content or ""
-            # Пытаемся найти source в ответе
-            source = "wiki/..."
+            # Пытаемся найти source
+            source = ""
             for line in answer.split('\n'):
                 if 'wiki/' in line and '.md' in line:
                     parts = line.split('wiki/')
@@ -193,12 +198,12 @@ messages = [
                 result = list_files(args["path"])
             elif func_name == "read_file":
                 result = read_file(args["path"])
-elif func_name == "query_api":
-    result = query_api(
-        method=args.get("method"),
-        path=args.get("path"),
-        body=args.get("body")
-    )
+            elif func_name == "query_api":
+                result = query_api(
+                    method=args.get("method"),
+                    path=args.get("path"),
+                    body=args.get("body")
+                )
             else:
                 result = "Неизвестный инструмент"
 
@@ -208,7 +213,6 @@ elif func_name == "query_api":
                 "result": result
             })
 
-            # Добавляем результат обратно в историю
             messages.append(msg)
             messages.append({
                 "role": "tool",
